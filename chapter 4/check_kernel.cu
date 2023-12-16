@@ -1,10 +1,6 @@
-// 当 总元素为 10^8+1 时, 除以128 不能整除
-// 我们将 分配781251 个线程块, 线程块大小为128; 线程总数为 10^8+128 
-// 这样会使得 127个线程 不需要操作
-
-
 #include <stdio.h>
 #include <math.h>
+#include "error.cuh"
 
 const double EPSILON = 1.0e-15;
 const double a = 1.23;
@@ -16,7 +12,7 @@ void check(const double *z, const int N);
 
 int main()
 {
-    const int N = 100000000 + 1;
+    const int N = 100000000;
     
     double *host_x = (double*)malloc(sizeof(double)*N);
     double *host_y = (double*)malloc(sizeof(double)*N);
@@ -37,8 +33,8 @@ int main()
     cudaMemcpy(device_x,host_x,sizeof(double)*N,cudaMemcpyHostToDevice);
     cudaMemcpy(device_y,host_y,sizeof(double)*N,cudaMemcpyHostToDevice);
 
-    // 总线程数 N  线程块数 128  网格个数 N/128
-    const int block_size = 128;
+    // 错误的设置线程块数 线程块数最大是1024 
+    const int block_size = 1280;
     int grid_size;
     if(N % block_size == 0) grid_size = N/block_size;
     else grid_size = N/block_size+1;
@@ -47,6 +43,10 @@ int main()
                             block_size,grid_size,block_size*grid_size);
 
     add<<<grid_size,block_size>>>(device_x,device_y,device_z, N);
+    
+    CHECK(cudaGetLastError());
+    CHECK(cudaDeviceSynchronize());
+
     cudaMemcpy(host_z,device_z,sizeof(double)*N,cudaMemcpyDeviceToHost);
     printf("host_z[0] = %lf\n",host_z[0]);
     check(host_z,N);
@@ -66,7 +66,7 @@ __global__ void add(const double *x, const double *y, double *z, const int N)
 {
     // i = 128*blockIdx.x + threadIdx.x
     const int i = blockDim.x * blockIdx.x + threadIdx.x;
-    if(i < N)    
+    if(i <  N)    
     {
         z[i] = x[i] + y[i];
     }
@@ -80,7 +80,8 @@ void check(const double *z, const int N)
         if(fabs(z[i]-c) > EPSILON)
         {
             check_flag = true;
-            printf("z[%d] = %lf\n",i,z[i]);
+            printf("check z[%d] = %lf\n",i,z[i]);
+            printf("%s\n", check_flag ? "Has errors" : "No errors");
             return ;
         }
     }
